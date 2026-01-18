@@ -1,19 +1,43 @@
 import { redis } from "@/lib/redis";
 import { Elysia } from "elysia";
 import { nanoid } from "nanoid";
+import { authMiddleware } from "./auth";
+import z from "zod";
 
-const rooms = new Elysia({ prefix: "/room" }).post("/create", async() => {
+const rooms = new Elysia({ prefix: "/room" }).post("/create", async () => {
   const roomId = nanoid();
 
   await redis.hset(`meta:${roomId}`, {
-    connected:[],
-    createdAt:Date.now()
-  })
+    connected: [],
+    createdAt: Date.now(),
+  });
 
-  await redis.expire(`meta:${roomId}`, 60 * 10) 
+  await redis.expire(`meta:${roomId}`, 60 * 10);
 
   return { roomId };
 });
+
+const messages = new Elysia({ prefix: "/messages" }).use(authMiddleware).post(
+  "/",
+  async ({ body, auth }) => {
+    const { sender, text } = body;
+
+    const roomExists = await redis.exists(`meta:${auth.roomId}`);
+
+    if (!roomExists) {
+      return { status: 404, body: { error: "Room not found" } };
+    }
+    
+
+  },
+  {
+    query: z.object({ roomId: z.string() }),
+    body: z.object({
+      sender: z.string().max(100),
+      text: z.string().max(10000),
+    }),
+  },
+);
 
 const app = new Elysia({ prefix: "/api" }).use(rooms);
 
